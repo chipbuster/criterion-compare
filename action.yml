@@ -10,10 +10,18 @@ inputs:
     description: "Sets the directory to run the benchmarks, relative to the project directory"
     required: false
     default: ""
-  branchName:
+  cargoBenchName:
+    description: "The benchmark name to run."
+    required: false
+    default: ""
+  gitBranchName:
     description: "Branch to compare PR against"
     required: false
-    default: "main"
+    default: "master"
+  doFetch:
+    description: "Run `git fetch` before performing other actions"
+    required: false
+    default: true
 runs:
   using: 'node12'
   main: 'dist/index.js'
