@@ -6,14 +6,26 @@ inputs:
     description: "GitHub Token which provides comment access to the repo"
     required: true
     default: ""
-  cwd:
+  workDir:
     description: "Sets the directory to run the benchmarks, relative to the project directory"
     required: false
+    default: "./"
+  cargoBenchName:
+    description: "The benchmark name to run."
+    required: false
     default: ""
-  branchName:
+  gitBranchName:
     description: "Branch to compare PR against"
     required: false
-    default: "main"
+    default: "master"
+  doFetch:
+    description: "Run `git fetch` before performing other actions"
+    required: false
+    default: true
+  doClean:
+    description: "Run `cargo clean` before starting benchmarks"
+    required: false
+    default: true
 runs:
-  using: 'node12'
+  using: 'node16'
   main: 'dist/index.js'
