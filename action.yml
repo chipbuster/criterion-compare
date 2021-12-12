@@ -1,11 +1,19 @@
-name: 'Your name here'
-description: 'Provide a description here'
-author: 'Your name or organization here'
+name: "Performance Comparison (Criterion)"
+description: "Compares PR performance against base with Criterion"
+author: "chipbuster"
 inputs:
-  milliseconds: # change this
+  token:
+    description: "GitHub Token which provides comment access to the repo"
     required: true
-    description: 'input description here'
-    default: 'default value if applicable'
+    default: ""
+  cwd:
+    description: "Sets the directory to run the benchmarks, relative to the project directory"
+    required: false
+    default: ""
+  branchName:
+    description: "Branch to compare PR against"
+    required: false
+    default: "main"
 runs:
   using: 'node12'
   main: 'dist/index.js'
