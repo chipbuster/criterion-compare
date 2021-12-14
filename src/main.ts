@@ -47,7 +47,7 @@ async function run(): Promise<void> {
 /** Obtains arguments for Actions run. */
 async function parseArgs(): Promise<ActionArguments> {
   const token = core.getInput('token')
-  const workDir = core.getInput('cwd')
+  const workDir = core.getInput('workDir')
   const branchName = core.getInput('gitBranchName')
   const benchName = core.getInput('cargoBenchName')
   const doFetch = core.getBooleanInput('doFetch')

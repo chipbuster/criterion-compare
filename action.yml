@@ -6,10 +6,10 @@ inputs:
     description: "GitHub Token which provides comment access to the repo"
     required: true
     default: ""
-  cwd:
+  workDir:
     description: "Sets the directory to run the benchmarks, relative to the project directory"
     required: false
-    default: ""
+    default: "./"
   cargoBenchName:
     description: "The benchmark name to run."
     required: false
