@@ -1,12 +1,11 @@
 import * as core from '@actions/core'
 import * as exec from '@actions/exec'
-import * as github from '@actions/github'
-import {ActionArguments} from './datastructs'
+import { ActionArguments } from './datastructs'
 
 async function run(): Promise<void> {
   try {
     core.debug(`Entering parsing phase`)
-    let args = await parseArgs() // Parses args using core.getInput
+    const args = await parseArgs() // Parses args using core.getInput
 
     core.debug(`Entering setup phase`)
     runSetup(args.doFetch)
@@ -15,17 +14,17 @@ async function run(): Promise<void> {
     if (args.benchName) {
       benchArgs = benchArgs.concat(['--bench', args.benchName])
     }
-    let options = {cwd: args.workDir}
+    const options = { cwd: args.workDir }
 
     core.debug(`Starting benchmark of changes`)
-    let changesBenchRC = runBench(
+    const changesBenchRC = runBench(
       benchArgs.concat(['--save-baseline', 'changes']),
       options
     )
     console.debug(`Benchmark command returned ${changesBenchRC}`)
 
     core.debug(`Checking out branch ${args.branchName}`)
-    let gitRC = await exec.exec('git', ['checkout', args.branchName])
+    const gitRC = await exec.exec('git', ['checkout', args.branchName])
     if (gitRC !== 0) {
       core.error('Git checkout failed! Bailing out.')
       return
