@@ -103,7 +103,7 @@ async function runBench(args: string[], options: object): Promise<number> {
   let fullArgs = [ "bench", "--" ]
   fullArgs.push(...args);
 
-  core.debug('Executing command: cargo ${...fullArgs} with options ${options}')
+  core.debug(`Executing command: cargo ${fullArgs} with options ${options}`)
   let rc = await exec.exec('cargo', fullArgs, options)
   return rc
 }

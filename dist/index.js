@@ -65,8 +65,9 @@ function run() {
             core.debug(`Entering parsing phase`);
             const args = yield parseArgs(); // Parses args using core.getInput
             core.debug(`Entering setup phase`);
-            runSetup(args.doFetch);
-            let benchArgs = ['bench'];
+            yield runSetup(args.doFetch);
+            // Arguments to criterion: these come *after* the `--` in the bench command
+            let benchArgs = new Array();
             if (args.benchName) {
                 benchArgs = benchArgs.concat(['--bench', args.benchName]);
             }
@@ -142,9 +143,9 @@ function runSetup(doFetch) {
  */
 function runBench(args, options) {
     return __awaiter(this, void 0, void 0, function* () {
-        let fullArgs = ['--'];
+        let fullArgs = ["bench", "--"];
         fullArgs.push(...args);
-        core.debug('Executing command: cargo ${...fullArgs} with options ${options}');
+        core.debug(`Executing command: cargo ${fullArgs} with options ${options}`);
         let rc = yield exec.exec('cargo', fullArgs, options);
         return rc;
     });
