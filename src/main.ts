@@ -8,9 +8,10 @@ async function run(): Promise<void> {
     const args = await parseArgs() // Parses args using core.getInput
 
     core.debug(`Entering setup phase`)
-    runSetup(args.doFetch)
+    await runSetup(args.doFetch)
 
-    let benchArgs = ['bench']
+    // Arguments to criterion: these come *after* the `--` in the bench command
+    let benchArgs = new Array<string>();
     if (args.benchName) {
       benchArgs = benchArgs.concat(['--bench', args.benchName])
     }
@@ -99,8 +100,8 @@ async function runSetup(doFetch: boolean): Promise<boolean> {
  * @returns The return code of the benchmarking operation
  */
 async function runBench(args: string[], options: object): Promise<number> {
-  let fullArgs = ['--']
-  fullArgs.push(...args)
+  let fullArgs = [ "bench", "--" ]
+  fullArgs.push(...args);
 
   core.debug('Executing command: cargo ${...fullArgs} with options ${options}')
   let rc = await exec.exec('cargo', fullArgs, options)
