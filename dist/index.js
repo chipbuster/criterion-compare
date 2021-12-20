@@ -67,6 +67,7 @@ function parseArgs() {
                 branchName = "main";
             }
             else {
+                core.debug("Setting gitBranchName to ${branchName} from GITHUB_BASE_REF");
                 branchName = envBaseRef;
             }
         }

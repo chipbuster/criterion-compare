@@ -1,4 +1,5 @@
 import * as core from '@actions/core'
+import { debug } from 'console'
 import * as path from 'path'
 export class ActionArguments {
   token: string
@@ -44,6 +45,7 @@ export async function parseArgs(): Promise<ActionArguments> {
       core.warning(`Could not find branchName from args or env, falling back to "main"`)
       branchName = "main"
     } else {
+      core.debug("Setting gitBranchName to ${branchName} from GITHUB_BASE_REF")
       branchName = envBaseRef
     }
   }
