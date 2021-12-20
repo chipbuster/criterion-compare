@@ -45,7 +45,6 @@ export async function tryExec(
   } else {
     cmdName = `${cmd} ${args}`
   }
-  core.debug(`Running command ${cmdName}`)
   let rc = await exec.exec(cmd, args, options)
   if (rc !== 0) {
     core.error(`Command \`${cmdName}\` failed with code ${rc}`)

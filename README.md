@@ -32,13 +32,13 @@ jobs:
       - uses: actions/checkout@master
       - uses: chipbuster/criterion-compare@vX.Y.Z
         with:
-          cwd: "subDirectory (optional)"  # Optional: relative to repo root
-          benchName: "my-criterion-benchmark" 
-          branchName: trunk             # Defaults to master
+          cwd: subDirectory (optional)
+          benchName: my-criterion-benchmark
+          branchName: trunk
           token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-_et. voila._, you should now get a comment on new PRs for performance!
+You should now get a comment on new PRs for performance!
 
 ### Options
 
@@ -103,4 +103,5 @@ options for a fix:
 
 - Pass the benchname to this action with `cargoBenchName`. This works only if
   there is a single benchmark you want to run.
-- 
+- Disable benchmarks for your lib/bin crates by adding `bench = false` to the
+  appropriate locations in your `Cargo.toml`.

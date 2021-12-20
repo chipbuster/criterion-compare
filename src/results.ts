@@ -216,8 +216,6 @@ class BenchmarkComparison {
     let term: string
     let unit: string
 
-    core.debug(`Getting Markdown Element of type ${ty}`)
-
     switch (ty) {
       case ReportFields.name:
         term = this.benchBase.name
