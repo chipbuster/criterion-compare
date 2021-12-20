@@ -652,10 +652,17 @@ function runComparison(args) {
         // Build up the table by querying each BenchmarkResult and asking it to generate
         // its own Markdown row.
         let table = genMarkdownHeader(order, args.branchName);
+        let insignificant = new Array();
         for (let res of results[0]) {
-            table += res.generateMarkdownTableRow(order, true);
-            table += '\n';
+            if (res.isSignificant) {
+                table += res.generateMarkdownTableRow(order, true);
+                table += '\n';
+            }
+            else {
+                insignificant.push(res.name);
+            }
         }
+        let insignificantStr = insignificant.join(', ');
         /* There can be benchmarks that are not in both sets (e.g. benchmarks added
           or removed in the PR). We can't report differences for them, but we should
           note that the benchmark set has changed.   */
@@ -677,6 +684,8 @@ function runComparison(args) {
   <summary>Click to view benchmark</summary>
 
 ${table}
+
+Tests with no significant difference: ${insignificantStr}
 
 ${otherResults}
 </details>
