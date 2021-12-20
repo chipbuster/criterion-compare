@@ -6,6 +6,7 @@ export class ActionArguments {
   branchName: string
   doFetch: boolean
   doClean: boolean
+  doComment: boolean
 
   constructor(
     token: string,
@@ -13,7 +14,8 @@ export class ActionArguments {
     branch: string,
     bench: string,
     fetch: boolean,
-    clean: boolean
+    clean: boolean,
+    comment: boolean
   ) {
     this.token = token
     this.workDir = cwd
@@ -21,6 +23,7 @@ export class ActionArguments {
     this.benchName = bench
     this.doFetch = fetch
     this.doClean = clean
+    this.doComment = comment
   }
 }
 
@@ -32,8 +35,9 @@ export async function parseArgs(): Promise<ActionArguments> {
   const benchName = core.getInput('cargoBenchName')
   const doFetch = core.getBooleanInput('doFetch')
   const doClean = core.getBooleanInput('doClean')
+  const doComment = core.getBooleanInput('doComment')
 
-  let args = new ActionArguments(token, workDir, branchName, benchName, doFetch, doClean)
+  let args = new ActionArguments(token, workDir, branchName, benchName, doFetch, doClean, doComment)
 
   core.debug(`Parsing phase finished. Got argument values:`)
   core.debug(`\ttoken: ${args.token}`)
@@ -42,6 +46,7 @@ export async function parseArgs(): Promise<ActionArguments> {
   core.debug(`\tgitBranchName: ${args.branchName}`)
   core.debug(`\tdoFetch: ${args.doFetch}`)
   core.debug(`\tdoClean: ${args.doClean}`)
+  core.debug(`\tdoComment: ${args.doComment}`)
 
   return args
 }

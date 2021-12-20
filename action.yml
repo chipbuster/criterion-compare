@@ -17,7 +17,7 @@ inputs:
   gitBranchName:
     description: "Branch to compare PR against"
     required: false
-    default: "master"
+    default: "${{ github.base_ref }}"
   doFetch:
     description: "Run `git fetch` before performing other actions"
     required: false
@@ -25,7 +25,16 @@ inputs:
   doClean:
     description: "Run `cargo clean` before starting benchmarks"
     required: false
+    default: false
+  doComment:
+    description: "Post a comment to the PR describing the benchmark results"
+    required: false
     default: true
+outputs:
+  results_markdown:
+    description: "The markdown table as a string"
+  results_json:
+    description: "The BenchmarkComparison as a JSON array. The schema may change without notice."
 runs:
   using: 'node16'
   main: 'dist/index.js'

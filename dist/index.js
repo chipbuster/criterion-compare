@@ -38,13 +38,14 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.parseArgs = exports.ActionArguments = void 0;
 const core = __importStar(__nccwpck_require__(2186));
 class ActionArguments {
-    constructor(token, cwd, branch, bench, fetch, clean) {
+    constructor(token, cwd, branch, bench, fetch, clean, comment) {
         this.token = token;
         this.workDir = cwd;
         this.branchName = branch;
         this.benchName = bench;
         this.doFetch = fetch;
         this.doClean = clean;
+        this.doComment = comment;
     }
 }
 exports.ActionArguments = ActionArguments;
@@ -57,7 +58,8 @@ function parseArgs() {
         const benchName = core.getInput('cargoBenchName');
         const doFetch = core.getBooleanInput('doFetch');
         const doClean = core.getBooleanInput('doClean');
-        let args = new ActionArguments(token, workDir, branchName, benchName, doFetch, doClean);
+        const doComment = core.getBooleanInput('doComment');
+        let args = new ActionArguments(token, workDir, branchName, benchName, doFetch, doClean, doComment);
         core.debug(`Parsing phase finished. Got argument values:`);
         core.debug(`\ttoken: ${args.token}`);
         core.debug(`\tcwd: ${args.workDir}`);
@@ -65,6 +67,7 @@ function parseArgs() {
         core.debug(`\tgitBranchName: ${args.branchName}`);
         core.debug(`\tdoFetch: ${args.doFetch}`);
         core.debug(`\tdoClean: ${args.doClean}`);
+        core.debug(`\tdoComment: ${args.doComment}`);
         return args;
     });
 }
@@ -138,9 +141,14 @@ function run() {
             core.debug(`Starting benchmark of ${args.branchName}`);
             let baseBenchRC = yield runBench(benchArgs.concat(['--save-baseline', 'base']), options);
             console.debug(`Benchmark command returned ${baseBenchRC}`);
-            let postStr = yield (0, results_1.runComparison)(args);
-            console.log(postStr);
-            yield postComment(args.token, postStr);
+            let compareResults = yield (0, results_1.runComparison)(args);
+            let resultsObj = compareResults[0];
+            let tableStr = compareResults[1];
+            core.setOutput("results_markdown", tableStr);
+            core.setOutput("results_json", JSON.stringify(resultsObj));
+            if (args.doComment) {
+                yield postComment(args.token, tableStr);
+            }
         }
         catch (error) {
             if (error instanceof Error)
@@ -645,7 +653,7 @@ function runComparison(args) {
         // Build the final post string.
         const context = github.context;
         let shortSha = context.sha.slice(0, 7);
-        return `
+        let mdTable = `
 ## Benchmark for ${shortSha}
 <details>
   <summary>Click to view benchmark</summary>
@@ -655,6 +663,7 @@ ${table}
 ${otherResults}
 </details>
 `;
+        return [results[0], mdTable];
     });
 }
 exports.runComparison = runComparison;

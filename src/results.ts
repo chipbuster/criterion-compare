@@ -392,7 +392,7 @@ function genMarkdownHeader(order: ReportFields[], branchName: string): string {
  * @param args Arguments provided to the overall GH Action
  * @returns A string containing the markdown contents of comparison.
  */
-export async function runComparison(args: ActionArguments): Promise<string> {
+export async function runComparison(args: ActionArguments): Promise<[BenchmarkComparison[], string]> {
   let result1 = await execCapture('critcmp', ['--export', 'base'], args.workDir)
   let result2 = await execCapture(
     'critcmp',
@@ -436,7 +436,7 @@ export async function runComparison(args: ActionArguments): Promise<string> {
   // Build the final post string.
   const context = github.context
   let shortSha = context.sha.slice(0, 7)
-  return `
+  let mdTable = `
 ## Benchmark for ${shortSha}
 <details>
   <summary>Click to view benchmark</summary>
@@ -446,4 +446,5 @@ ${table}
 ${otherResults}
 </details>
 `
+  return [results[0], mdTable]
 }

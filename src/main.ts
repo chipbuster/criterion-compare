@@ -1,6 +1,7 @@
 import * as core from '@actions/core'
 import * as exec from '@actions/exec'
 import * as github from '@actions/github'
+import { table } from 'console'
 import { parseArgs } from './datastructs'
 import { runComparison } from './results'
 import { tryExec } from './util'
@@ -41,9 +42,17 @@ async function run(): Promise<void> {
     )
     console.debug(`Benchmark command returned ${baseBenchRC}`)
 
-    let postStr = await runComparison(args)
-    console.log(postStr)
-    await postComment(args.token, postStr)
+    let compareResults = await runComparison(args)
+
+    let resultsObj = compareResults[0]
+    let tableStr = compareResults[1]
+
+    core.setOutput("results_markdown", tableStr)
+    core.setOutput("results_json", JSON.stringify(resultsObj))
+
+    if (args.doComment) {
+      await postComment(args.token, tableStr)
+    }
   } catch (error) {
     if (error instanceof Error) core.setFailed(error.message)
   }

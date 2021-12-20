@@ -2,104 +2,105 @@
   <a href="https://github.com/actions/typescript-action/actions"><img alt="typescript-action status" src="https://github.com/actions/typescript-action/workflows/build-test/badge.svg"></a>
 </p>
 
-# Create a JavaScript Action using TypeScript
+# Criterion Performance Comparison for GitHub Actions
 
-Use this template to bootstrap the creation of a TypeScript action.:rocket:
+> ⚠️ **WARNING**: Performance benchmarks provided by this action may fluctuate
+> [up to 50% on cloud infrastructure](https://bheisler.github.io/post/benchmarking-in-the-cloud/).
+> Run benchmarks locally or on a [dedicated test runner](https://docs.github.com/en/actions/hosting-your-own-runners/about-self-hosted-runners)
+> before making any decisions based on the results.
 
-This template includes compilation support, tests, a validation workflow, publishing, and versioning guidance.  
+This Github action compares performance between a PR and a dedicated target
+branch (usually the master or main branch).
 
-If you are new, there's also a simpler introduction.  See the [Hello World JavaScript Action](https://github.com/actions/hello-world-javascript-action)
+<!-- Insert example here -->
 
-## Create an action from this template
+## Usage
 
-Click the `Use this Template` and provide the new repo details for your action
+### Quickstart
 
-## Code in Main
-
-> First, you'll need to have a reasonably modern version of `node` handy. This won't work with versions older than 9, for instance.
-
-Install the dependencies  
-```bash
-$ npm install
-```
-
-Build the typescript and package it for distribution
-```bash
-$ npm run build && npm run package
-```
-
-Run the tests :heavy_check_mark:  
-```bash
-$ npm test
-
- PASS  ./index.test.js
-  ✓ throws invalid number (3ms)
-  ✓ wait 500 ms (504ms)
-  ✓ test runs (95ms)
-
-...
-```
-
-## Change action.yml
-
-The action.yml defines the inputs and output for your action.
-
-Update the action.yml with your name, description, inputs and outputs for your action.
-
-See the [documentation](https://help.github.com/en/articles/metadata-syntax-for-github-actions)
-
-## Change the Code
-
-Most toolkit and CI/CD operations involve async operations so the action is run in an async function.
-
-```javascript
-import * as core from '@actions/core';
-...
-
-async function run() {
-  try { 
-      ...
-  } 
-  catch (error) {
-    core.setFailed(error.message);
-  }
-}
-
-run()
-```
-
-See the [toolkit documentation](https://github.com/actions/toolkit/blob/master/README.md#packages) for the various packages.
-
-## Publish to a distribution branch
-
-Actions are run from GitHub repos so we will checkin the packed dist folder. 
-
-Then run [ncc](https://github.com/zeit/ncc) and push the results:
-```bash
-$ npm run package
-$ git add dist
-$ git commit -a -m "prod dependencies"
-$ git push origin releases/v1
-```
-
-Note: We recommend using the `--license` option for ncc, which will create a license file for all of the production node modules used in your project.
-
-Your action is now published! :rocket: 
-
-See the [versioning documentation](https://github.com/actions/toolkit/blob/master/docs/action-versioning.md)
-
-## Validate
-
-You can now validate the action by referencing `./` in a workflow in your repo (see [test.yml](.github/workflows/test.yml))
+Create a `.github/workflows/pull_request.yml` workflow file in your repo:
 
 ```yaml
-uses: ./
-with:
-  milliseconds: 1000
+# in file: .github/workflows/pull_request.yml
+on: [pull_request]
+name: Benchmark Pull Request
+jobs:
+  runBenchmark:
+    name: run benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@master
+      - uses: chipbuster/criterion-compare@vX.Y.Z
+        with:
+          cwd: "subDirectory (optional)"  # Optional: relative to repo root
+          benchName: "my-criterion-benchmark" 
+          branchName: trunk             # Defaults to master
+          token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-See the [actions tab](https://github.com/actions/typescript-action/actions) for runs of this action! :rocket:
+_et. voila._, you should now get a comment on new PRs for performance!
 
-## Usage:
+### Options
 
-After testing you can [create a v1 tag](https://github.com/actions/toolkit/blob/master/docs/action-versioning.md) to reference the stable and latest V1 action
+This action supports the following options passed via the `with` parameter:
+
+###### token
+
+The GitHub token which provides access to the repo (specifically, to comment).
+You don't need to do anything special for this aside from provide the string
+`${{ secrets.GITHUB_TOKEN }}` as in the example: GitHub has already generated
+this token for you.
+
+###### workDir (default: ./)
+
+The working directory relative to the project root. Useful if your project is
+not in the repository root (e.g. if you have multiple crates in one repo).
+
+###### cargoBenchName (default: none)
+
+The name of the cargo benchmark to run. If not provided, is not passed to
+`cargo bench`, resulting in all benchmarks being run.
+
+###### gitBranchName (default: ${{ github.base_ref }})
+
+The name of the branch to use as the baseline performance. Will usually be the
+branch that the PR wants to merge into, or another stable branch (like `main` or
+`trunk`).
+
+If not provided, defaults to the base_ref, i.e. the branch that is being merged to.
+
+###### doFetch (default: true)
+
+The [default checkout action](https://github.com/actions/checkout) only checks
+out the ref that causes the PR. This action needs a reference to `gitBranchName`
+in order to do the benchmarks, so we usually have to perform a fetch before
+running benchmarks.
+
+If you need to disable this behavior, you can set `doFetch` to false. Just
+make sure you've gotten the branch referred to by `gitBranchName` in some other
+way, e.g. by passing parameters to a checkout action before this one.
+
+###### doClean (default: false)
+
+Whether to run `cargo clean` before executing benchmarks. Should not be needed
+most of the time.
+
+###### doComment (default: true)
+
+Whether to post a comment to the repository describing the results. Defaults
+to true. However, if you want to aggregate results (e.g. with a different
+benchmark suite), you can set this to false. The benchmark results will be
+available in the outputs `results_markdown` and `results_json`, respectively.
+
+## Troubleshooting
+
+#### Unrecognized option: 'save-baseline'
+
+Check out the upstream docs for criterion [here](https://bheisler.github.io/criterion.rs/book/faq.html#cargo-bench-gives-unrecognized-option-errors-for-valid-command-line-options)
+to get the full details of what's going on and the fixes. The short version is
+that this is caused by an issue with `cargo bench` and you currently have two
+options for a fix:
+
+- Pass the benchname to this action with `cargoBenchName`. This works only if
+  there is a single benchmark you want to run.
+- 
