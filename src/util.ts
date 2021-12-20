@@ -68,6 +68,8 @@ export async function execCapture(
   let output = ''
   let error = ''
 
+  core.debug(`Attempting to execute with cwd=${cwd} `)
+
   const options = {
     listeners: {
       stdout: (data: Buffer) => {

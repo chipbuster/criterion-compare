@@ -1,4 +1,5 @@
 import * as core from '@actions/core'
+import * as path from 'path'
 export class ActionArguments {
   token: string
   workDir: string
@@ -30,7 +31,7 @@ export class ActionArguments {
 /** Obtains arguments for Actions run. */
 export async function parseArgs(): Promise<ActionArguments> {
   const token = core.getInput('token')
-  const workDir = core.getInput('workDir')
+  let workDir = core.getInput('workDir')
   let branchName = core.getInput('gitBranchName')
   const benchName = core.getInput('cargoBenchName')
   const doFetch = core.getBooleanInput('doFetch')
@@ -45,6 +46,11 @@ export async function parseArgs(): Promise<ActionArguments> {
     } else {
       branchName = envBaseRef
     }
+  }
+
+  // If workDir is relative, we should attempt to turn it into an absolute
+  if (workDir !== "" && !path.isAbsolute(workDir)) {
+    workDir = path.join(process.cwd(), workDir)
   }
 
   let args = new ActionArguments(token, workDir, branchName, benchName, doFetch, doClean, doComment)

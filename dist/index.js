@@ -37,6 +37,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.parseArgs = exports.ActionArguments = void 0;
 const core = __importStar(__nccwpck_require__(2186));
+const path = __importStar(__nccwpck_require__(1017));
 class ActionArguments {
     constructor(token, cwd, branch, bench, fetch, clean, comment) {
         this.token = token;
@@ -53,7 +54,7 @@ exports.ActionArguments = ActionArguments;
 function parseArgs() {
     return __awaiter(this, void 0, void 0, function* () {
         const token = core.getInput('token');
-        const workDir = core.getInput('workDir');
+        let workDir = core.getInput('workDir');
         let branchName = core.getInput('gitBranchName');
         const benchName = core.getInput('cargoBenchName');
         const doFetch = core.getBooleanInput('doFetch');
@@ -68,6 +69,10 @@ function parseArgs() {
             else {
                 branchName = envBaseRef;
             }
+        }
+        // If workDir is relative, we should attempt to turn it into an absolute
+        if (workDir !== "" && !path.isAbsolute(workDir)) {
+            workDir = path.join(process.cwd(), workDir);
         }
         let args = new ActionArguments(token, workDir, branchName, benchName, doFetch, doClean, doComment);
         core.debug(`Parsing phase finished. Got argument values:`);
@@ -761,6 +766,7 @@ function execCapture(cmd, args, cwd) {
     return __awaiter(this, void 0, void 0, function* () {
         let output = '';
         let error = '';
+        core.debug(`Attempting to execute with cwd=${cwd} `);
         const options = {
             listeners: {
                 stdout: (data) => {
