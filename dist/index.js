@@ -54,11 +54,21 @@ function parseArgs() {
     return __awaiter(this, void 0, void 0, function* () {
         const token = core.getInput('token');
         const workDir = core.getInput('workDir');
-        const branchName = core.getInput('gitBranchName');
+        let branchName = core.getInput('gitBranchName');
         const benchName = core.getInput('cargoBenchName');
         const doFetch = core.getBooleanInput('doFetch');
         const doClean = core.getBooleanInput('doClean');
         const doComment = core.getBooleanInput('doComment');
+        if (branchName === "") {
+            let envBaseRef = process.env.GITHUB_BASE_REF;
+            if (envBaseRef == null || envBaseRef === "") {
+                core.warning(`Could not find branchName from args or env, falling back to "main"`);
+                branchName = "main";
+            }
+            else {
+                branchName = envBaseRef;
+            }
+        }
         let args = new ActionArguments(token, workDir, branchName, benchName, doFetch, doClean, doComment);
         core.debug(`Parsing phase finished. Got argument values:`);
         core.debug(`\ttoken: ${args.token}`);
