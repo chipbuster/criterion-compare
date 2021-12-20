@@ -31,11 +31,21 @@ export class ActionArguments {
 export async function parseArgs(): Promise<ActionArguments> {
   const token = core.getInput('token')
   const workDir = core.getInput('workDir')
-  const branchName = core.getInput('gitBranchName')
+  let branchName = core.getInput('gitBranchName')
   const benchName = core.getInput('cargoBenchName')
   const doFetch = core.getBooleanInput('doFetch')
   const doClean = core.getBooleanInput('doClean')
   const doComment = core.getBooleanInput('doComment')
+
+  if (branchName === "") {
+    let envBaseRef = process.env.GITHUB_BASE_REF;
+    if (envBaseRef == null || envBaseRef === "") {
+      core.warning(`Could not find branchName from args or env, falling back to "main"`)
+      branchName = "main"
+    } else {
+      branchName = envBaseRef
+    }
+  }
 
   let args = new ActionArguments(token, workDir, branchName, benchName, doFetch, doClean, doComment)
 

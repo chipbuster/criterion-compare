@@ -17,7 +17,6 @@ inputs:
   gitBranchName:
     description: "Branch to compare PR against"
     required: false
-    default: "${{ env.GITHUB_BASE_REF }}"
   doFetch:
     description: "Run `git fetch` before performing other actions"
     required: false
