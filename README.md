@@ -105,3 +105,9 @@ options for a fix:
   there is a single benchmark you want to run.
 - Disable benchmarks for your lib/bin crates by adding `bench = false` to the
   appropriate locations in your `Cargo.toml`.
+
+## Known Limitations
+
+This action cannot handle mismatched repository structures between two branches,
+e.g. if the code structure has been changed between the PR and the base branch,
+the action will likely fail.

@@ -46,8 +46,8 @@ async function run(): Promise<void> {
     let resultsObj = compareResults[0]
     let tableStr = compareResults[1]
 
-    core.setOutput("results_markdown", tableStr)
-    core.setOutput("results_json", JSON.stringify(resultsObj))
+    core.setOutput('results_markdown', tableStr)
+    core.setOutput('results_json', JSON.stringify(resultsObj))
 
     if (args.doComment) {
       await postComment(args.token, tableStr)
@@ -100,7 +100,6 @@ async function runBench(args: string[], options: object): Promise<number> {
   let fullArgs = ['bench', '--']
   fullArgs.push(...args)
 
-  core.debug('Executing command: cargo ${...fullArgs} with options ${options}')
   let rc = await exec.exec('cargo', fullArgs, options)
   return rc
 }
