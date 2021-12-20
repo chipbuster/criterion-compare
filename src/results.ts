@@ -17,7 +17,7 @@
 
 import * as core from '@actions/core'
 import * as github from '@actions/github'
-import { ActionArguments } from './datastructs'
+import { ActionArguments } from './arguments'
 import { execCapture } from './util'
 
 /**

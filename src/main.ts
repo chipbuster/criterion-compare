@@ -1,8 +1,7 @@
 import * as core from '@actions/core'
 import * as exec from '@actions/exec'
 import * as github from '@actions/github'
-import { table } from 'console'
-import { parseArgs } from './datastructs'
+import { parseArgs } from './arguments'
 import { runComparison } from './results'
 import { tryExec } from './util'
 

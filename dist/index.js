@@ -1,7 +1,7 @@
 require('./sourcemap-register.js');/******/ (() => { // webpackBootstrap
 /******/ 	var __webpack_modules__ = ({
 
-/***/ 5625:
+/***/ 4681:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -113,13 +113,13 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 const core = __importStar(__nccwpck_require__(2186));
 const exec = __importStar(__nccwpck_require__(1514));
 const github = __importStar(__nccwpck_require__(5438));
-const datastructs_1 = __nccwpck_require__(5625);
+const arguments_1 = __nccwpck_require__(4681);
 const results_1 = __nccwpck_require__(8100);
 const util_1 = __nccwpck_require__(4024);
 function run() {
     return __awaiter(this, void 0, void 0, function* () {
         try {
-            const args = yield (0, datastructs_1.parseArgs)(); // Parses args using core.getInput
+            const args = yield (0, arguments_1.parseArgs)(); // Parses args using core.getInput
             core.debug(`Entering setup phase`);
             yield runSetup(args.doFetch, args.doClean);
             core.debug(`Setup completed.`);
@@ -453,7 +453,6 @@ class BenchmarkComparison {
     getMarkdownElement(ty, addBold) {
         let term;
         let unit;
-        core.debug(`Getting Markdown Element of type ${ty}`);
         switch (ty) {
             case ReportFields.name:
                 term = this.benchBase.name;
@@ -732,7 +731,6 @@ function tryExec(cmd, args, options) {
         else {
             cmdName = `${cmd} ${args}`;
         }
-        core.debug(`Running command ${cmdName}`);
         let rc = yield exec.exec(cmd, args, options);
         if (rc !== 0) {
             core.error(`Command \`${cmdName}\` failed with code ${rc}`);
