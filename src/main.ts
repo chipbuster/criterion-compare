@@ -1,7 +1,7 @@
 import * as core from '@actions/core'
 import * as exec from '@actions/exec'
 import * as github from '@actions/github'
-import { parseArgs } from './arguments'
+import { ActionArguments, parseArgs } from './arguments'
 import { runComparison } from './results'
 import { tryExec } from './util'
 
@@ -21,24 +21,18 @@ async function run(): Promise<void> {
     const options = { cwd: args.workDir }
 
     core.debug(`Starting benchmark of changes`)
-    const changesBenchRC = await runBench(
-      benchArgs.concat(['--save-baseline', 'changes']),
-      options
-    )
+    const changesBenchRC = await runBench(args, 'changes', options)
     console.debug(`Benchmark command returned ${changesBenchRC}`)
 
     core.debug(`Checking out branch ${args.branchName}`)
     const gitRC = await exec.exec('git', ['checkout', args.branchName])
     if (gitRC !== 0) {
       core.error('Git checkout failed! Bailing out.')
-      return
+      throw new Error(`Git checkout failed`)
     }
 
     core.debug(`Starting benchmark of ${args.branchName}`)
-    let baseBenchRC = await runBench(
-      benchArgs.concat(['--save-baseline', 'base']),
-      options
-    )
+    let baseBenchRC = await runBench(args, 'base', options)
     console.debug(`Benchmark command returned ${baseBenchRC}`)
 
     let compareResults = await runComparison(args)
@@ -96,9 +90,18 @@ async function runSetup(doFetch: boolean, doClean: boolean): Promise<boolean> {
  * @param options An object of options to use with exec()
  * @returns The return code of the benchmarking operation
  */
-async function runBench(args: string[], options: object): Promise<number> {
-  let fullArgs = ['bench', '--']
-  fullArgs.push(...args)
+async function runBench(
+  args: ActionArguments,
+  baselineName: string,
+  options: object
+): Promise<number> {
+  let fullArgs = ['bench']
+
+  if (args.benchName) {
+    fullArgs.push('--bench', args.benchName)
+  }
+  fullArgs.push('--')
+  fullArgs.push('--save-baseline', baselineName)
 
   let rc = await exec.exec('cargo', fullArgs, options)
   return rc

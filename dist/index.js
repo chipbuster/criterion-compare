@@ -146,22 +146,22 @@ function run() {
             }
             const options = { cwd: args.workDir };
             core.debug(`Starting benchmark of changes`);
-            const changesBenchRC = yield runBench(benchArgs.concat(['--save-baseline', 'changes']), options);
+            const changesBenchRC = yield runBench(args, 'changes', options);
             console.debug(`Benchmark command returned ${changesBenchRC}`);
             core.debug(`Checking out branch ${args.branchName}`);
             const gitRC = yield exec.exec('git', ['checkout', args.branchName]);
             if (gitRC !== 0) {
                 core.error('Git checkout failed! Bailing out.');
-                return;
+                throw new Error(`Git checkout failed`);
             }
             core.debug(`Starting benchmark of ${args.branchName}`);
-            let baseBenchRC = yield runBench(benchArgs.concat(['--save-baseline', 'base']), options);
+            let baseBenchRC = yield runBench(args, 'base', options);
             console.debug(`Benchmark command returned ${baseBenchRC}`);
             let compareResults = yield (0, results_1.runComparison)(args);
             let resultsObj = compareResults[0];
             let tableStr = compareResults[1];
-            core.setOutput("results_markdown", tableStr);
-            core.setOutput("results_json", JSON.stringify(resultsObj));
+            core.setOutput('results_markdown', tableStr);
+            core.setOutput('results_json', JSON.stringify(resultsObj));
             if (args.doComment) {
                 yield postComment(args.token, tableStr);
             }
@@ -207,11 +207,14 @@ function runSetup(doFetch, doClean) {
  * @param options An object of options to use with exec()
  * @returns The return code of the benchmarking operation
  */
-function runBench(args, options) {
+function runBench(args, baselineName, options) {
     return __awaiter(this, void 0, void 0, function* () {
-        let fullArgs = ['bench', '--'];
-        fullArgs.push(...args);
-        core.debug('Executing command: cargo ${...fullArgs} with options ${options}');
+        let fullArgs = ['bench'];
+        if (args.benchName) {
+            fullArgs.push('--bench', args.benchName);
+        }
+        fullArgs.push('--');
+        fullArgs.push('--save-baseline', baselineName);
         let rc = yield exec.exec('cargo', fullArgs, options);
         return rc;
     });
