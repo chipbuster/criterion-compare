@@ -412,7 +412,7 @@ class BenchmarkComplete {
             this.slope = null;
         }
         if (body.change != null) {
-            this.change = new BenchmarkChanges(body.changes);
+            this.change = new BenchmarkChanges(body.change);
         }
         else {
             // Probably because this did not show up in both benchmarks
