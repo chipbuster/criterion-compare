@@ -86,10 +86,10 @@ class MeasurementStats {
 
   /** Construct a MeasurementStats from a part of a JSON object */
   constructor(body: any) {
-    this.estimate = parseFloat(body.estimate)
-    this.lower_bound = parseFloat(body.lower_bound)
-    this.upper_bound = parseFloat(body.upper_bound)
-    this.unit = body.unit
+    this.estimate = parseFloat(body!.estimate)
+    this.lower_bound = parseFloat(body!.lower_bound)
+    this.upper_bound = parseFloat(body!.upper_bound)
+    this.unit = body!.unit
   }
 }
 
@@ -102,9 +102,9 @@ class BenchmarkChanges {
   median: MeasurementStats
   change: string
   constructor(body: any) {
-    this.mean = new MeasurementStats(body.mean)
-    this.median = new MeasurementStats(body.median)
-    this.change = body.change
+    this.mean = new MeasurementStats(body!.mean)
+    this.median = new MeasurementStats(body!.median)
+    this.change = body!.change
   }
 }
 
