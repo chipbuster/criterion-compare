@@ -230,6 +230,7 @@ function resultsFromJSONString(s: string): Array<BenchmarkComplete> {
       .map(msg => new BenchmarkComplete(msg))
   } catch (e) {
     core.error(`Exception while parsing JSON results: ${e}`)
+    core.debug(`Input string was ${s}`)
     throw e
   }
 }
