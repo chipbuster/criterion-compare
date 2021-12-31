@@ -441,7 +441,7 @@ class BenchmarkComplete {
         if (this.change != null) {
             let pChange = this.change.mean.estimate;
             let bTime = undoPctChange(pChange, parseFloat(newTimeDisplay));
-            baseTime = bTime.toString() + ' ' + newTimeDisplayUnit;
+            baseTime = bTime.toFixed(2) + ' ' + newTimeDisplayUnit;
             pctChange = pChange.toFixed(2) + '%';
         }
         else {
@@ -452,12 +452,12 @@ class BenchmarkComplete {
         // Figure out bounds on %change
         let pctLB, pctUB;
         if (pctChange === 'null') {
-            pctLB = ((_a = this.change) === null || _a === void 0 ? void 0 : _a.mean.lower_bound.toFixed(2)) + '%';
-            pctUB = ((_b = this.change) === null || _b === void 0 ? void 0 : _b.mean.upper_bound.toFixed(2)) + '%';
-        }
-        else {
             pctLB = 'null';
             pctUB = 'null';
+        }
+        else {
+            pctLB = ((_a = this.change) === null || _a === void 0 ? void 0 : _a.mean.lower_bound.toFixed(2)) + '%';
+            pctUB = ((_b = this.change) === null || _b === void 0 ? void 0 : _b.mean.upper_bound.toFixed(2)) + '%';
         }
         let outMap = new Map([
             [ReportFields.BaseTime, baseTime],
