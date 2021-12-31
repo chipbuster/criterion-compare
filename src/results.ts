@@ -222,17 +222,25 @@ class BenchmarkComplete {
  * @returns Array of BenchmarkResults
  */
 function resultsFromJSONString(s: string): Array<BenchmarkComplete> {
-  try {
-    const messages = s.trim().split('\n')
-    return messages
-      .map(s => JSON.parse(s))
-      .filter(msg => msg.reason != null && msg.reason == 'benchmark-complete')
-      .map(msg => new BenchmarkComplete(msg))
-  } catch (e) {
-    core.error(`Exception while parsing JSON results: ${e}`)
-    core.debug(`Input string was ${s}`)
-    throw e
+  let out = new Array()
+  const messages = s.trim().split('\n')
+  // Ideally this would be a map-filter-map, but we can't catch individual
+  // message exceptions like that.
+  for (let msg of messages) {
+    try {
+      const json = JSON.parse(msg)
+      if (json.reason == null || json.reason != 'benchmark-complete') {
+        continue
+      }
+      out.push(new BenchmarkComplete(json))
+    } catch (e) {
+      core.error(`Exception while parsing JSON results: ${e}`)
+      core.debug(`Input string was ${msg}`)
+      throw e
+    }
   }
+
+  return out
 }
 
 /**
