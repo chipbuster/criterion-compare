@@ -223,7 +223,7 @@ class BenchmarkComplete {
  */
 function resultsFromJSONString(s: string): Array<BenchmarkComplete> {
   try {
-    const messages = s.split('\n')
+    const messages = s.trim().split('\n')
     return messages
       .map(s => JSON.parse(s))
       .filter(msg => msg.reason != null && msg.reason == 'benchmark-complete')
