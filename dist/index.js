@@ -60,19 +60,19 @@ function parseArgs() {
         const doFetch = core.getBooleanInput('doFetch');
         const doClean = core.getBooleanInput('doClean');
         const doComment = core.getBooleanInput('doComment');
-        if (branchName === "") {
+        if (branchName === '') {
             let envBaseRef = process.env.GITHUB_BASE_REF;
-            if (envBaseRef == null || envBaseRef === "") {
+            if (envBaseRef == null || envBaseRef === '') {
                 core.warning(`Could not find branchName from args or env, falling back to "main"`);
-                branchName = "main";
+                branchName = 'main';
             }
             else {
-                core.debug("Setting gitBranchName to ${branchName} from GITHUB_BASE_REF");
+                core.debug('Setting gitBranchName to ${branchName} from GITHUB_BASE_REF');
                 branchName = envBaseRef;
             }
         }
         // If workDir is relative, we should attempt to turn it into an absolute
-        if (workDir !== "" && !path.isAbsolute(workDir)) {
+        if (workDir !== '' && !path.isAbsolute(workDir)) {
             workDir = path.join(process.cwd(), workDir);
         }
         let args = new ActionArguments(token, workDir, branchName, benchName, doFetch, doClean, doComment);
@@ -139,31 +139,25 @@ function run() {
             core.debug(`Entering setup phase`);
             yield runSetup(args.doFetch, args.doClean);
             core.debug(`Setup completed.`);
-            // The arguments passed to criterion: these come after the `--` in the command
-            let benchArgs = [];
-            if (args.benchName) {
-                benchArgs = benchArgs.concat(['--bench', args.benchName]);
-            }
-            const options = { cwd: args.workDir };
-            core.debug(`Starting benchmark of changes`);
-            const changesBenchRC = yield runBench(args, 'changes', options);
-            console.debug(`Benchmark command returned ${changesBenchRC}`);
+            // Since cargo criterion gives us changes from the last benchmark, we should
+            // checkout and benchmark the base branch first.
             core.debug(`Checking out branch ${args.branchName}`);
-            const gitRC = yield exec.exec('git', ['checkout', args.branchName]);
-            if (gitRC !== 0) {
-                core.error('Git checkout failed! Bailing out.');
-                throw new Error(`Git checkout failed`);
-            }
-            core.debug(`Starting benchmark of ${args.branchName}`);
-            let baseBenchRC = yield runBench(args, 'base', options);
-            console.debug(`Benchmark command returned ${baseBenchRC}`);
-            let compareResults = yield (0, results_1.runComparison)(args);
-            let resultsObj = compareResults[0];
-            let tableStr = compareResults[1];
-            core.setOutput('results_markdown', tableStr);
-            core.setOutput('results_json', JSON.stringify(resultsObj));
+            const gitRCBase = yield exec.exec('git', ['checkout', args.branchName]);
+            (0, util_1.checkExitStatus)(gitRCBase, 'git checkout');
+            core.debug(`Starting benchmark of base code`);
+            const baseBenchRes = yield runBench(args);
+            (0, util_1.checkExitStatus)(baseBenchRes.exitCode, `Benchmark command ${baseBenchRes.command}`);
+            // Now we do the same thing for the PR
+            const pr_sha = github.context.sha;
+            const gitRCPR = yield exec.exec('git', ['checkout', pr_sha]);
+            (0, util_1.checkExitStatus)(gitRCPR, 'git checkout');
+            core.debug(`Starting benchmark of proposed changes`);
+            let deltaBenchRes = yield runBench(args);
+            (0, util_1.checkExitStatus)(deltaBenchRes.exitCode, `Benchmark command ${deltaBenchRes.command}`);
+            let compareResults = yield (0, results_1.genBenchmarkResultTable)(deltaBenchRes.stdOut);
+            core.setOutput('results_markdown', compareResults);
             if (args.doComment) {
-                yield postComment(args.token, tableStr);
+                yield postComment(args.token, compareResults);
             }
         }
         catch (error) {
@@ -182,7 +176,7 @@ function run() {
 function runSetup(doFetch, doClean) {
     return __awaiter(this, void 0, void 0, function* () {
         core.debug(`Attempting to install cargo-criterion + CLI Tools, doFetch is ${doFetch}`);
-        let cargoS = yield (0, util_1.tryExec)('cargo', ['install', 'critcmp']);
+        let cargoS = yield (0, util_1.tryExec)('cargo', ['install', 'cargo-criterion']);
         if (!cargoS) {
             return false;
         }
@@ -207,16 +201,20 @@ function runSetup(doFetch, doClean) {
  * @param options An object of options to use with exec()
  * @returns The return code of the benchmarking operation
  */
-function runBench(args, baselineName, options) {
+function runBench(args) {
     return __awaiter(this, void 0, void 0, function* () {
-        let fullArgs = ['bench'];
+        let fullArgs = ['criterion'];
         if (args.benchName) {
-            fullArgs.push('--bench', args.benchName);
+            fullArgs.push('--bench');
+            fullArgs.push(args.benchName);
         }
-        fullArgs.push('--');
-        fullArgs.push('--save-baseline', baselineName);
-        let rc = yield exec.exec('cargo', fullArgs, options);
-        return rc;
+        else {
+            fullArgs.push('--benches');
+        }
+        fullArgs.push('--message-format');
+        fullArgs.push('json');
+        let res = yield (0, util_1.execCapture)('cargo', fullArgs, args.workDir);
+        return res;
     });
 }
 /**
@@ -269,10 +267,10 @@ run();
   | Test Name | PR | trunk | % of trunk |
   |-----------|----|-------|------------|
   | solve n=100 | 85.79 ± 0.65 μs | **81.56 ± 0.36 μs** | 5 |
- * To this end, we parse the benchmark results from critcmp as JSON, turning
- * them into BenchmarkResults. We then pair off BenchmarkResults into
- * BenchmarkComparisons. Each BenchmarkComparison has enough information
- * to generate a single row of this table.
+
+ * We take advantage of the fact that cargo-criterion can output JSON directly
+ * (https://bheisler.github.io/criterion.rs/book/cargo_criterion/external_tools.html)
+ * to read most of this data out in a nice automated fasihon.
  */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -303,10 +301,18 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.runComparison = void 0;
+exports.genBenchmarkResultTable = void 0;
 const core = __importStar(__nccwpck_require__(2186));
 const github = __importStar(__nccwpck_require__(5438));
-const util_1 = __nccwpck_require__(4024);
+var ReportFields;
+(function (ReportFields) {
+    ReportFields[ReportFields["TestName"] = 0] = "TestName";
+    ReportFields[ReportFields["BaseTime"] = 1] = "BaseTime";
+    ReportFields[ReportFields["PRTime"] = 2] = "PRTime";
+    ReportFields[ReportFields["PctDiff"] = 3] = "PctDiff";
+    ReportFields[ReportFields["PctDiff_LB"] = 4] = "PctDiff_LB";
+    ReportFields[ReportFields["PctDiff_UB"] = 5] = "PctDiff_UB";
+})(ReportFields || (ReportFields = {}));
 /**
  * Find the units to display a given number of nanoseconds as.
  * @param s The time, in nanoseconds
@@ -346,14 +352,12 @@ function toDisplay(s, unit) {
             throw new Error(`Unknown unit ${unit}`);
     }
 }
-/** The fields we output into the final markdown report. */
-var ReportFields;
-(function (ReportFields) {
-    ReportFields[ReportFields["name"] = 0] = "name";
-    ReportFields[ReportFields["deltaRes"] = 1] = "deltaRes";
-    ReportFields[ReportFields["baseRes"] = 2] = "baseRes";
-    ReportFields[ReportFields["pctDiff"] = 3] = "pctDiff";
-})(ReportFields || (ReportFields = {}));
+/// If we have a number X which is a P percent change from Y, calculate Y
+/// Example: newVal is 60 and pctChange is 50, so oldval must have been 40
+function undoPctChange(pctChange, newVal) {
+    const p = pctChange / 100;
+    return newVal / (1 + p);
+}
 /**
  * Represents a single benchmark point: one measurement of one trial. All numbers
  * are in nanoseconds except confidenceLevel which is a number in [0,1) and
@@ -361,198 +365,129 @@ var ReportFields;
  */
 class MeasurementStats {
     /** Construct a MeasurementStats from a part of a JSON object */
-    constructor(name, body) {
-        var _a, _b, _c, _d;
-        this.kind = name;
-        /* These two entries are currently crucial to statistics computation--without
-           them, we cannot compute stats. The rest are just nice-to-haves. */
-        if (typeof body.point_estimate !== 'number') {
-            core.error("No 'point_estimate' found in JSON--has critcmp format changed?");
-        }
-        if (typeof body.standard_error !== 'number') {
-            core.error("No 'standard_error' found in JSON--has critcmp format changed?");
-        }
-        this.pointEstimate = body.point_estimate;
-        this.standardError = body.standard_error;
-        if (this.pointEstimate < 1 || this.standardError < 1) {
-            core.warning(`Found a value of ${this.pointEstimate}±${this.standardError}. This value is highly suspicious!!`);
-        }
-        // Default values: confidence level and bounds are set assuming pointEstimate
-        // is the only valid estimate (so it's lower and upper bound with no confidence)
-        const CI = (_a = body.confidence_interval) !== null && _a !== void 0 ? _a : {
-            lower_bound: this.pointEstimate,
-            upper_bound: this.pointEstimate,
-            confidence_level: 0.0
-        };
-        this.lowerBound = (_b = CI.lower_bound) !== null && _b !== void 0 ? _b : this.pointEstimate;
-        this.upperBound = (_c = CI.upper_bound) !== null && _c !== void 0 ? _c : this.pointEstimate;
-        this.confidenceLevel = (_d = CI.confidence_level) !== null && _d !== void 0 ? _d : 0.0;
+    constructor(body) {
+        this.estimate = parseFloat(body.estimate);
+        this.lower_bound = parseFloat(body.lower_bound);
+        this.upper_bound = parseFloat(body.upper_bound);
+        this.unit = body.unit;
     }
 }
 /**
- * Represents a benchmark result on a given object and dataset (e.g. the results
- * of running "test_five_random" on "main"). Contains
+ * Represents the changes between two benchmark results (output by cargo
+ * criterion under the "changes" key)
  */
-class BenchmarkResult {
-    constructor(name, benchmark_obj) {
-        var _a;
-        if (benchmark_obj == null) {
-            core.error(`Received a null/undef object for ${name}`);
-        }
-        this.name = name;
-        this.baseline = (_a = benchmark_obj.baseline) !== null && _a !== void 0 ? _a : 'unknown';
-        const estimates = benchmark_obj.criterion_estimates_v1;
-        if (estimates == null) {
-            core.error('Criterion estimates not found. Has data format changed?');
-            throw new Error('Benchmark data not found in benchmark object');
-        }
-        if (estimates.mean == null) {
-            core.error(`Mean was not found in benchmark ${name}: ${benchmark_obj}`);
-            throw new Error('Benchmark data not found in benchmark object');
+class BenchmarkChanges {
+    constructor(body) {
+        this.mean = new MeasurementStats(body.mean);
+        this.median = new MeasurementStats(body.median);
+        this.change = body.change;
+    }
+}
+/**
+ * The results and basic statistics from a single Criterion.rs benchmark.
+ * Format and name are derived from the coressponding cargo criterion JSON message
+ *
+ * Note: we're using the somewhat-hacky assumption that we're looking at the
+ * **new** BenchmarkComplete message, even though in principle we could look
+ * at either (or both!). This works because we can get all the info we need
+ * to out of the new benchmark, but can be a little confusing when talking
+ * about certain kinds of information.
+ */
+class BenchmarkComplete {
+    constructor(body) {
+        this.id = body.id;
+        this.report_directory = body.report_directory;
+        this.iteration_count = body.iteration_count.map((x) => parseInt(x));
+        this.measured_values = body.measured_values.map((x) => parseFloat(x));
+        this.unit = body.unit;
+        this.typical = new MeasurementStats(body.typical);
+        this.mean = new MeasurementStats(body.mean);
+        this.median = new MeasurementStats(body.median);
+        this.median_abs_dev = new MeasurementStats(body.median_abs_dev);
+        if (body.slope != null) {
+            this.slope = new MeasurementStats(body.slope);
         }
         else {
-            this.mean = new MeasurementStats('mean', estimates.mean);
+            this.slope = null;
         }
-        if (estimates.median == null) {
-            core.error(`Median was not found in benchmark ${name}: ${benchmark_obj}`);
-            throw new Error('Benchmark data not found in benchmark object');
-        }
-        else {
-            this.median = new MeasurementStats('median', estimates.median);
-        }
-        if (estimates.std_dev == null) {
-            core.error(`std_dev was not found in benchmark ${name}: ${benchmark_obj}`);
-            throw new Error('Benchmark data not found in benchmark object');
+        if (body.change != null) {
+            this.change = new BenchmarkChanges(body.changes);
         }
         else {
-            this.std_dev = new MeasurementStats('std_dev', estimates.std_dev);
+            // Probably because this did not show up in both benchmarks
+            this.change = null;
         }
     }
-    /** Determines if the difference between this benchmark and the other is significant */
-    diffSignificant(other) {
-        if (other.name !== this.name) {
-            core.warning(`Tried to compare names ${other.name} and ${this.name}.`);
+    isSignificant() {
+        if (this.change !== null) {
+            return this.change.change !== 'NoChange';
+        }
+        else {
             return false;
         }
-        let myVal = this.mean.pointEstimate;
-        let myErr = this.std_dev.pointEstimate;
-        let oVal = other.mean.pointEstimate;
-        let oErr = other.std_dev.pointEstimate;
-        /* The following code is adapted from the original criterion-compare-action
-           repository. I'm unsure if this is statistically valid or meaningful, but
-           I'm retaining it for now. */
-        if (myVal < oVal) {
-            return myVal + myErr < oVal || oVal - oErr > myVal;
+    }
+    /// Is this benchmark new in this benchmark set?
+    isNew() {
+        return this.change === null;
+    }
+    /// Generates a markdown row from the given benchmark result
+    generateMarkdownRow(order) {
+        var _a, _b;
+        let newTimeNano = this.mean.estimate;
+        let newTimeDisplayUnit = displayUnits(newTimeNano);
+        let newTimeDisplay = toDisplay(newTimeNano, newTimeDisplayUnit);
+        let pctChange, baseTime;
+        if (this.change != null) {
+            let pChange = this.change.mean.estimate;
+            let bTime = undoPctChange(pChange, parseFloat(newTimeDisplay));
+            baseTime = bTime.toString() + ' ' + newTimeDisplayUnit;
+            pctChange = pChange.toFixed(2) + '%';
         }
         else {
-            return myVal - myErr > oVal || oVal + oErr < myVal;
+            pctChange = 'null';
+            baseTime = 'unknown';
         }
-    }
-}
-/** A comparison of two individual benchmark results against each other */
-class BenchmarkComparison {
-    constructor(base, delta) {
-        if (base.name !== delta.name) {
-            throw new Error('Trying to compare benchmarks with different names');
-        }
-        this.name = base.name;
-        this.benchBase = base;
-        this.benchDelta = delta;
-        this.isSignificant = base.diffSignificant(delta);
-        this.pctDiff =
-            (100 * (delta.mean.pointEstimate - base.mean.pointEstimate)) /
-                base.mean.pointEstimate;
-    }
-    /**
-     * Gets the string representation of a field in the Markdown table
-     * @param ty The type of field requested
-     * @param addBold Whether the element should be **bolded**
-     * @returns A markdown string representation of the appropriate field
-     */
-    getMarkdownElement(ty, addBold) {
-        let term;
-        let unit;
-        switch (ty) {
-            case ReportFields.name:
-                term = this.benchBase.name;
-                break;
-            case ReportFields.deltaRes:
-                unit = displayUnits(this.benchDelta.mean.pointEstimate);
-                term =
-                    toDisplay(this.benchDelta.mean.pointEstimate, unit) +
-                        ' ± ' +
-                        toDisplay(this.benchDelta.std_dev.pointEstimate, unit) +
-                        ' ' +
-                        unit;
-                break;
-            case ReportFields.baseRes:
-                unit = displayUnits(this.benchBase.mean.pointEstimate);
-                term =
-                    toDisplay(this.benchBase.mean.pointEstimate, unit) +
-                        ' ± ' +
-                        toDisplay(this.benchBase.std_dev.pointEstimate, unit) +
-                        ' ' +
-                        unit;
-                break;
-            case ReportFields.pctDiff:
-                term = Math.round(this.pctDiff).toString();
-                break;
-            default:
-                throw new Error(`Unknown ReportField type ${ty}`);
-        }
-        if (addBold) {
-            return '**' + term + '**';
+        newTimeDisplay = newTimeDisplay + ' ' + newTimeDisplayUnit;
+        // Figure out bounds on %change
+        let pctLB, pctUB;
+        if (pctChange === 'null') {
+            pctLB = ((_a = this.change) === null || _a === void 0 ? void 0 : _a.mean.lower_bound.toFixed(2)) + '%';
+            pctUB = ((_b = this.change) === null || _b === void 0 ? void 0 : _b.mean.upper_bound.toFixed(2)) + '%';
         }
         else {
-            return term;
+            pctLB = 'null';
+            pctUB = 'null';
         }
-    }
-    /**
-     * Generates a row of the markdown report table given the column names in-order.
-     * @param columnNames The column names in the order used in the table.
-     * @param useBold Whether to bold the faster field of (delta, base)
-     * @returns A markdown string for a single row of the table.
-     */
-    generateMarkdownTableRow(columnNames, useBold) {
-        let output = '|';
-        let boldField = null;
-        if (useBold) {
-            if (this.pctDiff > 100) {
-                boldField = ReportFields.deltaRes;
-            }
-            else {
-                boldField = ReportFields.baseRes;
-            }
-        }
-        for (let ty of columnNames) {
-            output += ' ';
-            if (ty == boldField) {
-                output += this.getMarkdownElement(ty, true);
-            }
-            else {
-                output += this.getMarkdownElement(ty, false);
-            }
-            output += ' |';
-        }
-        return output;
+        let outMap = new Map([
+            [ReportFields.BaseTime, baseTime],
+            [ReportFields.PRTime, newTimeDisplay],
+            [ReportFields.TestName, this.id],
+            [ReportFields.PctDiff, pctChange],
+            [ReportFields.PctDiff_LB, pctLB],
+            [ReportFields.PctDiff_UB, pctUB]
+        ]);
+        let out = '| ';
+        order.forEach(x => {
+            out += outMap.get(x);
+            out += ' | ';
+        });
+        out += ' |';
+        return out;
     }
 }
 /**
- * Generates an array of BenchmarkResults by parsing a JSON string
- * @param s JSON string from critcmp
+ * Generates an array of BenchmarkResults by parsing a JSON string, looking for
+ * "reason = benchmark-complete".
+ * @param s JSON string of results from cargo criterion
  * @returns Array of BenchmarkResults
  */
 function resultsFromJSONString(s) {
     try {
-        let toplevel = JSON.parse(s);
-        if (toplevel.benchmarks == null) {
-            console.error("No 'benchmarks' key found in JSON: has data format changed?");
-        }
-        let out = new Array();
-        for (const [name, value] of Object.entries(toplevel.benchmarks)) {
-            out.push(new BenchmarkResult(name, value));
-        }
-        return out;
+        const messages = s.split('\n');
+        return messages
+            .map(s => JSON.parse(s))
+            .filter(msg => msg.reason != null && msg.reason == 'benchmark-complete')
+            .map(msg => new BenchmarkComplete(msg));
     }
     catch (e) {
         core.error(`Exception while parsing JSON results: ${e}`);
@@ -560,60 +495,19 @@ function resultsFromJSONString(s) {
     }
 }
 /**
- * Converts two BenchmarkResults (base + delta) into a list of BenchmarkComparisons
- * by pairing off the tests with matching names
- * @param baseResults Results from the base branch
- * @param deltaResults Results from the test (PR) branch
- * @returns A tuple with three elements:
- *  - [0]: A list of BenchmarkResults
- *  - [1]: A list of test names that were in base, but not the PR
- *  - [2]: A list of test names that were in the PR, but not in base
- */
-function processResults(baseResults, deltaResults) {
-    let allTestNames = new Set();
-    let baseDict = new Map();
-    let deltaDict = new Map();
-    baseResults.forEach(x => {
-        baseDict.set(x.name, x);
-        allTestNames.add(x.name);
-    });
-    deltaResults.forEach(x => {
-        deltaDict.set(x.name, x);
-        allTestNames.add(x.name);
-    });
-    let compareResults = new Array();
-    let inBaseOnly = new Set();
-    let inDeltaOnly = new Set();
-    for (let name of allTestNames) {
-        let baseRes = baseDict.get(name);
-        let deltaRes = deltaDict.get(name);
-        if (baseRes != null && deltaRes != null) {
-            compareResults.push(new BenchmarkComparison(baseRes, deltaRes));
-        }
-        else if (baseRes == null) {
-            inDeltaOnly.add(name);
-        }
-        else if (deltaRes == null) {
-            inBaseOnly.add(name);
-        }
-        else {
-            core.error('Unreachable executed in processResults');
-        }
-    }
-    return [compareResults, inBaseOnly, inDeltaOnly];
-}
-/**
  * Generates the first + second rows of a markdown table
  * @param order The order of ReportFields to use in the table
  * @param branchName The name of the base branch
  * @returns A string with the first two rows of markdown
  */
-function genMarkdownHeader(order, branchName) {
+function genMarkdownHeader(order) {
     let outMap = new Map([
-        [ReportFields.baseRes, branchName],
-        [ReportFields.deltaRes, 'PR'],
-        [ReportFields.name, 'Test Name'],
-        [ReportFields.pctDiff, `% of ${branchName}`]
+        [ReportFields.BaseTime, 'Base'],
+        [ReportFields.PRTime, 'PR'],
+        [ReportFields.TestName, 'Test Name'],
+        [ReportFields.PctDiff, `% Change`],
+        [ReportFields.PctDiff_LB, `% Change (Lower)`],
+        [ReportFields.PctDiff_UB, `% Change (Upper)`]
     ]);
     // Add initial header row
     let output = '|';
@@ -636,45 +530,31 @@ function genMarkdownHeader(order, branchName) {
  * @param args Arguments provided to the overall GH Action
  * @returns A string containing the markdown contents of comparison.
  */
-function runComparison(args) {
+function genBenchmarkResultTable(jsonOutput) {
     return __awaiter(this, void 0, void 0, function* () {
-        let result1 = yield (0, util_1.execCapture)('critcmp', ['--export', 'base'], args.workDir);
-        let result2 = yield (0, util_1.execCapture)('critcmp', ['--export', 'changes'], args.workDir);
-        const baseResults = resultsFromJSONString(result1.stdOut);
-        const changeResults = resultsFromJSONString(result2.stdOut);
-        let results = processResults(baseResults, changeResults);
+        let results = resultsFromJSONString(jsonOutput);
         let order = [
-            ReportFields.name,
-            ReportFields.deltaRes,
-            ReportFields.baseRes,
-            ReportFields.pctDiff
+            ReportFields.TestName,
+            ReportFields.BaseTime,
+            ReportFields.PRTime,
+            ReportFields.PctDiff,
+            ReportFields.PctDiff_LB,
+            ReportFields.PctDiff_UB
         ];
         // Build up the table by querying each BenchmarkResult and asking it to generate
         // its own Markdown row.
-        let table = genMarkdownHeader(order, args.branchName);
+        let table = genMarkdownHeader(order);
         let insignificant = new Array();
-        for (let res of results[0]) {
-            if (res.isSignificant) {
-                table += res.generateMarkdownTableRow(order, true);
+        for (let res of results) {
+            if (res.isSignificant() || res.isNew()) {
+                table += res.generateMarkdownRow(order);
                 table += '\n';
             }
             else {
-                insignificant.push(res.name);
+                insignificant.push(res.id);
             }
         }
         let insignificantStr = insignificant.join(', ');
-        /* There can be benchmarks that are not in both sets (e.g. benchmarks added
-          or removed in the PR). We can't report differences for them, but we should
-          note that the benchmark set has changed.   */
-        let otherResults = '';
-        if (results[1].size > 0) {
-            otherResults += `\n Tests only on ${args.branchName}: `;
-            otherResults += Array.from(results[1]).join(', ');
-        }
-        if (results[2].size > 0) {
-            otherResults += `\n Tests only on PR: `;
-            otherResults += Array.from(results[2]).join(', ');
-        }
         // Build the final post string.
         const context = github.context;
         let shortSha = context.sha.slice(0, 7);
@@ -687,13 +567,12 @@ ${table}
 
 Tests with no significant difference: ${insignificantStr}
 
-${otherResults}
 </details>
 `;
-        return [results[0], mdTable];
+        return mdTable;
     });
 }
-exports.runComparison = runComparison;
+exports.genBenchmarkResultTable = genBenchmarkResultTable;
 
 
 /***/ }),
@@ -736,7 +615,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.execCapture = exports.tryExec = void 0;
+exports.checkExitStatus = exports.execCapture = exports.tryExec = exports.CommandResult = void 0;
 const core = __importStar(__nccwpck_require__(2186));
 const exec = __importStar(__nccwpck_require__(1514));
 /**
@@ -744,12 +623,14 @@ const exec = __importStar(__nccwpck_require__(1514));
  * and error captured.
  */
 class CommandResult {
-    constructor(ec, out, err) {
+    constructor(ec, out, err, cmd) {
         this.exitCode = ec;
         this.stdOut = out;
         this.stdErr = err;
+        this.command = cmd;
     }
 }
+exports.CommandResult = CommandResult;
 function tryExec(cmd, args, options) {
     return __awaiter(this, void 0, void 0, function* () {
         let cmdName;
@@ -792,10 +673,17 @@ function execCapture(cmd, args, cwd) {
             cwd: cwd
         };
         let rc = yield exec.exec(cmd, args, options);
-        return new CommandResult(rc, output, error);
+        return new CommandResult(rc, output, error, cmd);
     });
 }
 exports.execCapture = execCapture;
+function checkExitStatus(rc, commandName) {
+    if (rc !== 0) {
+        core.error(`${commandName} failed with code ${rc}. Bailing out.`);
+        throw new Error(`${commandName} failed with code ${rc}.`);
+    }
+}
+exports.checkExitStatus = checkExitStatus;
 
 
 /***/ }),

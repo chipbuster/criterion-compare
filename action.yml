@@ -32,8 +32,6 @@ inputs:
 outputs:
   results_markdown:
     description: "The markdown table as a string"
-  results_json:
-    description: "The BenchmarkComparison as a JSON array. The schema may change without notice."
 runs:
   using: 'node16'
   main: 'dist/index.js'

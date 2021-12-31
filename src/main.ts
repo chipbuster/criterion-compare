@@ -2,8 +2,8 @@ import * as core from '@actions/core'
 import * as exec from '@actions/exec'
 import * as github from '@actions/github'
 import { ActionArguments, parseArgs } from './arguments'
-import { runComparison } from './results'
-import { tryExec } from './util'
+import { genBenchmarkResultTable } from './results'
+import { tryExec, execCapture, CommandResult, checkExitStatus } from './util'
 
 async function run(): Promise<void> {
   try {
@@ -13,38 +13,39 @@ async function run(): Promise<void> {
     await runSetup(args.doFetch, args.doClean)
     core.debug(`Setup completed.`)
 
-    // The arguments passed to criterion: these come after the `--` in the command
-    let benchArgs: string[] = []
-    if (args.benchName) {
-      benchArgs = benchArgs.concat(['--bench', args.benchName])
-    }
-    const options = { cwd: args.workDir }
-
-    core.debug(`Starting benchmark of changes`)
-    const changesBenchRC = await runBench(args, 'changes', options)
-    console.debug(`Benchmark command returned ${changesBenchRC}`)
+    // Since cargo criterion gives us changes from the last benchmark, we should
+    // checkout and benchmark the base branch first.
 
     core.debug(`Checking out branch ${args.branchName}`)
-    const gitRC = await exec.exec('git', ['checkout', args.branchName])
-    if (gitRC !== 0) {
-      core.error('Git checkout failed! Bailing out.')
-      throw new Error(`Git checkout failed`)
-    }
+    const gitRCBase = await exec.exec('git', ['checkout', args.branchName])
+    checkExitStatus(gitRCBase, 'git checkout')
 
-    core.debug(`Starting benchmark of ${args.branchName}`)
-    let baseBenchRC = await runBench(args, 'base', options)
-    console.debug(`Benchmark command returned ${baseBenchRC}`)
+    core.debug(`Starting benchmark of base code`)
+    const baseBenchRes = await runBench(args)
+    checkExitStatus(
+      baseBenchRes.exitCode,
+      `Benchmark command ${baseBenchRes.command}`
+    )
 
-    let compareResults = await runComparison(args)
+    // Now we do the same thing for the PR
 
-    let resultsObj = compareResults[0]
-    let tableStr = compareResults[1]
+    const pr_sha = github.context.sha
+    const gitRCPR = await exec.exec('git', ['checkout', pr_sha])
+    checkExitStatus(gitRCPR, 'git checkout')
 
-    core.setOutput('results_markdown', tableStr)
-    core.setOutput('results_json', JSON.stringify(resultsObj))
+    core.debug(`Starting benchmark of proposed changes`)
+    let deltaBenchRes = await runBench(args)
+    checkExitStatus(
+      deltaBenchRes.exitCode,
+      `Benchmark command ${deltaBenchRes.command}`
+    )
+
+    let compareResults = await genBenchmarkResultTable(deltaBenchRes.stdOut)
+
+    core.setOutput('results_markdown', compareResults)
 
     if (args.doComment) {
-      await postComment(args.token, tableStr)
+      await postComment(args.token, compareResults)
     }
   } catch (error) {
     if (error instanceof Error) core.setFailed(error.message)
@@ -63,7 +64,7 @@ async function runSetup(doFetch: boolean, doClean: boolean): Promise<boolean> {
     `Attempting to install cargo-criterion + CLI Tools, doFetch is ${doFetch}`
   )
 
-  let cargoS = await tryExec('cargo', ['install', 'critcmp'])
+  let cargoS = await tryExec('cargo', ['install', 'cargo-criterion'])
   if (!cargoS) {
     return false
   }
@@ -90,21 +91,20 @@ async function runSetup(doFetch: boolean, doClean: boolean): Promise<boolean> {
  * @param options An object of options to use with exec()
  * @returns The return code of the benchmarking operation
  */
-async function runBench(
-  args: ActionArguments,
-  baselineName: string,
-  options: object
-): Promise<number> {
-  let fullArgs = ['bench']
-
+async function runBench(args: ActionArguments): Promise<CommandResult> {
+  let fullArgs = ['criterion']
   if (args.benchName) {
-    fullArgs.push('--bench', args.benchName)
+    fullArgs.push('--bench')
+    fullArgs.push(args.benchName)
+  } else {
+    fullArgs.push('--benches')
   }
-  fullArgs.push('--')
-  fullArgs.push('--save-baseline', baselineName)
 
-  let rc = await exec.exec('cargo', fullArgs, options)
-  return rc
+  fullArgs.push('--message-format')
+  fullArgs.push('json')
+
+  let res = await execCapture('cargo', fullArgs, args.workDir)
+  return res
 }
 
 /**
