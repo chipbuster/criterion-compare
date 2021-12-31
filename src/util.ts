@@ -10,14 +10,16 @@ import * as exec from '@actions/exec'
  * Represents the result of a command executed by exec.exec, with its output
  * and error captured.
  */
-class CommandResult {
+export class CommandResult {
   exitCode: number
   stdOut: string
   stdErr: string
-  constructor(ec: number, out: string, err: string) {
+  command: string
+  constructor(ec: number, out: string, err: string, cmd: string) {
     this.exitCode = ec
     this.stdOut = out
     this.stdErr = err
+    this.command = cmd
   }
 }
 
@@ -84,5 +86,12 @@ export async function execCapture(
 
   let rc = await exec.exec(cmd, args, options)
 
-  return new CommandResult(rc, output, error)
+  return new CommandResult(rc, output, error, cmd)
+}
+
+export function checkExitStatus(rc: number, commandName: string) {
+  if (rc !== 0) {
+    core.error(`${commandName} failed with code ${rc}. Bailing out.`)
+    throw new Error(`${commandName} failed with code ${rc}.`)
+  }
 }

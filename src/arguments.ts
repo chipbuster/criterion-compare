@@ -1,5 +1,4 @@
 import * as core from '@actions/core'
-import { debug } from 'console'
 import * as path from 'path'
 export class ActionArguments {
   token: string
@@ -39,23 +38,33 @@ export async function parseArgs(): Promise<ActionArguments> {
   const doClean = core.getBooleanInput('doClean')
   const doComment = core.getBooleanInput('doComment')
 
-  if (branchName === "") {
-    let envBaseRef = process.env.GITHUB_BASE_REF;
-    if (envBaseRef == null || envBaseRef === "") {
-      core.warning(`Could not find branchName from args or env, falling back to "main"`)
-      branchName = "main"
+  if (branchName === '') {
+    let envBaseRef = process.env.GITHUB_BASE_REF
+    if (envBaseRef == null || envBaseRef === '') {
+      core.warning(
+        `Could not find branchName from args or env, falling back to "main"`
+      )
+      branchName = 'main'
     } else {
-      core.debug("Setting gitBranchName to ${branchName} from GITHUB_BASE_REF")
+      core.debug('Setting gitBranchName to ${branchName} from GITHUB_BASE_REF')
       branchName = envBaseRef
     }
   }
 
   // If workDir is relative, we should attempt to turn it into an absolute
-  if (workDir !== "" && !path.isAbsolute(workDir)) {
+  if (workDir !== '' && !path.isAbsolute(workDir)) {
     workDir = path.join(process.cwd(), workDir)
   }
 
-  let args = new ActionArguments(token, workDir, branchName, benchName, doFetch, doClean, doComment)
+  let args = new ActionArguments(
+    token,
+    workDir,
+    branchName,
+    benchName,
+    doFetch,
+    doClean,
+    doComment
+  )
 
   core.debug(`Parsing phase finished. Got argument values:`)
   core.debug(`\ttoken: ${args.token}`)

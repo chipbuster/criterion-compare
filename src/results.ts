@@ -9,16 +9,25 @@
   | Test Name | PR | trunk | % of trunk |
   |-----------|----|-------|------------|
   | solve n=100 | 85.79 ± 0.65 μs | **81.56 ± 0.36 μs** | 5 |
- * To this end, we parse the benchmark results from critcmp as JSON, turning
- * them into BenchmarkResults. We then pair off BenchmarkResults into 
- * BenchmarkComparisons. Each BenchmarkComparison has enough information
- * to generate a single row of this table.
+
+ * We take advantage of the fact that cargo-criterion can output JSON directly
+ * (https://bheisler.github.io/criterion.rs/book/cargo_criterion/external_tools.html)
+ * to read most of this data out in a nice automated fasihon.
  */
 
 import * as core from '@actions/core'
 import * as github from '@actions/github'
 import { ActionArguments } from './arguments'
 import { execCapture } from './util'
+
+enum ReportFields {
+  TestName,
+  BaseTime,
+  PRTime,
+  PctDiff,
+  PctDiff_LB,
+  PctDiff_UB
+}
 
 /**
  * Find the units to display a given number of nanoseconds as.
@@ -57,12 +66,11 @@ function toDisplay(s: number, unit: string): string {
   }
 }
 
-/** The fields we output into the final markdown report. */
-enum ReportFields {
-  name,
-  deltaRes,
-  baseRes,
-  pctDiff
+/// If we have a number X which is a P percent change from Y, calculate Y
+/// Example: newVal is 60 and pctChange is 50, so oldval must have been 40
+function undoPctChange(pctChange: number, newVal: number): number {
+  const p = pctChange / 100
+  return newVal / (1 + p)
 }
 
 /**
@@ -71,288 +79,159 @@ enum ReportFields {
  * describes the confidence% of the [lowerBound, upperBound] interval (e.g. 95%)
  */
 class MeasurementStats {
-  readonly kind: string
-  readonly pointEstimate: number
-  readonly standardError: number
-  readonly lowerBound: number
-  readonly upperBound: number
-  readonly confidenceLevel: number
+  readonly estimate: number
+  readonly lower_bound: number
+  readonly upper_bound: number
+  readonly unit: string
 
   /** Construct a MeasurementStats from a part of a JSON object */
-  constructor(name: string, body: any) {
-    this.kind = name
-
-    /* These two entries are currently crucial to statistics computation--without
-       them, we cannot compute stats. The rest are just nice-to-haves. */
-    if (typeof body.point_estimate !== 'number') {
-      core.error(
-        "No 'point_estimate' found in JSON--has critcmp format changed?"
-      )
-    }
-    if (typeof body.standard_error !== 'number') {
-      core.error(
-        "No 'standard_error' found in JSON--has critcmp format changed?"
-      )
-    }
-
-    this.pointEstimate = body.point_estimate
-    this.standardError = body.standard_error
-
-    if (this.pointEstimate < 1 || this.standardError < 1) {
-      core.warning(
-        `Found a value of ${this.pointEstimate}±${this.standardError}. This value is highly suspicious!!`
-      )
-    }
-
-    // Default values: confidence level and bounds are set assuming pointEstimate
-    // is the only valid estimate (so it's lower and upper bound with no confidence)
-    const CI = body.confidence_interval ?? {
-      lower_bound: this.pointEstimate,
-      upper_bound: this.pointEstimate,
-      confidence_level: 0.0
-    }
-    this.lowerBound = CI.lower_bound ?? this.pointEstimate
-    this.upperBound = CI.upper_bound ?? this.pointEstimate
-    this.confidenceLevel = CI.confidence_level ?? 0.0
+  constructor(body: any) {
+    this.estimate = parseFloat(body.estimate)
+    this.lower_bound = parseFloat(body.lower_bound)
+    this.upper_bound = parseFloat(body.upper_bound)
+    this.unit = body.unit
   }
 }
 
 /**
- * Represents a benchmark result on a given object and dataset (e.g. the results
- * of running "test_five_random" on "main"). Contains
+ * Represents the changes between two benchmark results (output by cargo
+ * criterion under the "changes" key)
  */
-class BenchmarkResult {
-  name: string // Name of the benchmark (e.g. "run_db_query")
-  baseline: string // Name of the baseline that this result belongs to
+class BenchmarkChanges {
   mean: MeasurementStats
   median: MeasurementStats
-  std_dev: MeasurementStats
-
-  constructor(name: string, benchmark_obj: any) {
-    if (benchmark_obj == null) {
-      core.error(`Received a null/undef object for ${name}`)
-    }
-
-    this.name = name
-    this.baseline = benchmark_obj.baseline ?? 'unknown'
-
-    const estimates = benchmark_obj.criterion_estimates_v1
-    if (estimates == null) {
-      core.error('Criterion estimates not found. Has data format changed?')
-      throw new Error('Benchmark data not found in benchmark object')
-    }
-    if (estimates.mean == null) {
-      core.error(`Mean was not found in benchmark ${name}: ${benchmark_obj}`)
-      throw new Error('Benchmark data not found in benchmark object')
-    } else {
-      this.mean = new MeasurementStats('mean', estimates.mean)
-    }
-
-    if (estimates.median == null) {
-      core.error(`Median was not found in benchmark ${name}: ${benchmark_obj}`)
-      throw new Error('Benchmark data not found in benchmark object')
-    } else {
-      this.median = new MeasurementStats('median', estimates.median)
-    }
-
-    if (estimates.std_dev == null) {
-      core.error(`std_dev was not found in benchmark ${name}: ${benchmark_obj}`)
-      throw new Error('Benchmark data not found in benchmark object')
-    } else {
-      this.std_dev = new MeasurementStats('std_dev', estimates.std_dev)
-    }
-  }
-
-  /** Determines if the difference between this benchmark and the other is significant */
-  diffSignificant(other: BenchmarkResult): boolean {
-    if (other.name !== this.name) {
-      core.warning(`Tried to compare names ${other.name} and ${this.name}.`)
-      return false
-    }
-    let myVal = this.mean.pointEstimate
-    let myErr = this.std_dev.pointEstimate
-    let oVal = other.mean.pointEstimate
-    let oErr = other.std_dev.pointEstimate
-
-    /* The following code is adapted from the original criterion-compare-action
-       repository. I'm unsure if this is statistically valid or meaningful, but
-       I'm retaining it for now. */
-    if (myVal < oVal) {
-      return myVal + myErr < oVal || oVal - oErr > myVal
-    } else {
-      return myVal - myErr > oVal || oVal + oErr < myVal
-    }
-  }
-}
-
-/** A comparison of two individual benchmark results against each other */
-class BenchmarkComparison {
-  name: string
-  benchBase: BenchmarkResult
-  benchDelta: BenchmarkResult
-  isSignificant: boolean
-  pctDiff: number
-
-  constructor(base: BenchmarkResult, delta: BenchmarkResult) {
-    if (base.name !== delta.name) {
-      throw new Error('Trying to compare benchmarks with different names')
-    }
-    this.name = base.name
-    this.benchBase = base
-    this.benchDelta = delta
-    this.isSignificant = base.diffSignificant(delta)
-    this.pctDiff =
-      (100 * (delta.mean.pointEstimate - base.mean.pointEstimate)) /
-      base.mean.pointEstimate
-  }
-
-  /**
-   * Gets the string representation of a field in the Markdown table
-   * @param ty The type of field requested
-   * @param addBold Whether the element should be **bolded**
-   * @returns A markdown string representation of the appropriate field
-   */
-  getMarkdownElement(ty: ReportFields, addBold: boolean): string {
-    let term: string
-    let unit: string
-
-    switch (ty) {
-      case ReportFields.name:
-        term = this.benchBase.name
-        break
-      case ReportFields.deltaRes:
-        unit = displayUnits(this.benchDelta.mean.pointEstimate)
-        term =
-          toDisplay(this.benchDelta.mean.pointEstimate, unit) +
-          ' ± ' +
-          toDisplay(this.benchDelta.std_dev.pointEstimate, unit) +
-          ' ' +
-          unit
-        break
-      case ReportFields.baseRes:
-        unit = displayUnits(this.benchBase.mean.pointEstimate)
-        term =
-          toDisplay(this.benchBase.mean.pointEstimate, unit) +
-          ' ± ' +
-          toDisplay(this.benchBase.std_dev.pointEstimate, unit) +
-          ' ' +
-          unit
-        break
-      case ReportFields.pctDiff:
-        term = Math.round(this.pctDiff).toString()
-        break
-      default:
-        throw new Error(`Unknown ReportField type ${ty}`)
-    }
-    if (addBold) {
-      return '**' + term + '**'
-    } else {
-      return term
-    }
-  }
-
-  /**
-   * Generates a row of the markdown report table given the column names in-order.
-   * @param columnNames The column names in the order used in the table.
-   * @param useBold Whether to bold the faster field of (delta, base)
-   * @returns A markdown string for a single row of the table.
-   */
-  generateMarkdownTableRow(
-    columnNames: ReportFields[],
-    useBold: boolean
-  ): string {
-    let output = '|'
-    let boldField = null
-    if (useBold) {
-      if (this.pctDiff > 100) {
-        boldField = ReportFields.deltaRes
-      } else {
-        boldField = ReportFields.baseRes
-      }
-    }
-
-    for (let ty of columnNames) {
-      output += ' '
-      if (ty == boldField) {
-        output += this.getMarkdownElement(ty, true)
-      } else {
-        output += this.getMarkdownElement(ty, false)
-      }
-      output += ' |'
-    }
-    return output
+  change: string
+  constructor(body: any) {
+    this.mean = new MeasurementStats(body.mean)
+    this.median = new MeasurementStats(body.median)
+    this.change = body.change
   }
 }
 
 /**
- * Generates an array of BenchmarkResults by parsing a JSON string
- * @param s JSON string from critcmp
- * @returns Array of BenchmarkResults
+ * The results and basic statistics from a single Criterion.rs benchmark.
+ * Format and name are derived from the coressponding cargo criterion JSON message
+ * 
+ * Note: we're using the somewhat-hacky assumption that we're looking at the
+ * **new** BenchmarkComplete message, even though in principle we could look
+ * at either (or both!). This works because we can get all the info we need
+ * to out of the new benchmark, but can be a little confusing when talking
+ * about certain kinds of information.
  */
-function resultsFromJSONString(s: string): Array<BenchmarkResult> {
-  try {
-    let toplevel = JSON.parse(s)
-    if (toplevel.benchmarks == null) {
-      console.error(
-        "No 'benchmarks' key found in JSON: has data format changed?"
-      )
+class BenchmarkComplete {
+  id: string
+  report_directory: string
+  iteration_count: number[]
+  measured_values: number[]
+  unit: string
+  typical: MeasurementStats
+  mean: MeasurementStats
+  median: MeasurementStats
+  median_abs_dev: MeasurementStats
+  slope: MeasurementStats | null
+  change: BenchmarkChanges | null
+
+  constructor(body: any) {
+    this.id = body.id
+    this.report_directory = body.report_directory
+    this.iteration_count = body.iteration_count.map((x: string) => parseInt(x))
+    this.measured_values = body.measured_values.map((x: string) =>
+      parseFloat(x)
+    )
+    this.unit = body.unit
+    this.typical = new MeasurementStats(body.typical)
+    this.mean = new MeasurementStats(body.mean)
+    this.median = new MeasurementStats(body.median)
+    this.median_abs_dev = new MeasurementStats(body.median_abs_dev)
+    if (body.slope != null) {
+      this.slope = new MeasurementStats(body.slope)
+    } else {
+      this.slope = null
+    }
+    if (body.change != null) {
+      this.change = new BenchmarkChanges(body.changes)
+    } else {
+      // Probably because this did not show up in both benchmarks
+      this.change = null
+    }
+  }
+
+  isSignificant() {
+    if (this.change !== null) {
+      return this.change.change !== 'NoChange'
+    } else {
+      return false
+    }
+  }
+
+  /// Is this benchmark new in this benchmark set?
+  isNew(){
+    return this.change === null
+  }
+
+  /// Generates a markdown row from the given benchmark result
+  generateMarkdownRow(order: ReportFields[]): string {
+    let newTimeNano = this.mean.estimate
+    let newTimeDisplayUnit = displayUnits(newTimeNano)
+    let newTimeDisplay = toDisplay(newTimeNano, newTimeDisplayUnit)
+    let pctChange: string, baseTime: string
+    if (this.change != null) {
+      let pChange = this.change.mean.estimate
+      let bTime = undoPctChange(pChange, parseFloat(newTimeDisplay))
+      baseTime = bTime.toString() + ' ' + newTimeDisplayUnit
+      pctChange = pChange.toFixed(2) + '%'
+    } else {
+      pctChange = 'null'
+      baseTime = 'unknown'
+    }
+    newTimeDisplay = newTimeDisplay + ' ' + newTimeDisplayUnit
+
+    // Figure out bounds on %change
+    let pctLB: string, pctUB: string
+    if (pctChange === 'null') {
+      pctLB = this.change?.mean.lower_bound.toFixed(2) + '%'
+      pctUB = this.change?.mean.upper_bound.toFixed(2) + '%'
+    } else {
+      pctLB = 'null'
+      pctUB = 'null'
     }
 
-    let out = new Array<BenchmarkResult>()
-    for (const [name, value] of Object.entries(toplevel.benchmarks)) {
-      out.push(new BenchmarkResult(name, value))
-    }
+    let outMap = new Map([
+      [ReportFields.BaseTime, baseTime],
+      [ReportFields.PRTime, newTimeDisplay],
+      [ReportFields.TestName, this.id],
+      [ReportFields.PctDiff, pctChange],
+      [ReportFields.PctDiff_LB, pctLB],
+      [ReportFields.PctDiff_UB, pctUB]
+    ])
+
+    let out = '| '
+    order.forEach(x => {
+      out += outMap.get(x)
+      out += ' | '
+    })
+    out += ' |'
     return out
+  }
+}
+
+/**
+ * Generates an array of BenchmarkResults by parsing a JSON string, looking for
+ * "reason = benchmark-complete".
+ * @param s JSON string of results from cargo criterion
+ * @returns Array of BenchmarkResults
+ */
+function resultsFromJSONString(s: string): Array<BenchmarkComplete> {
+  try {
+    const messages = s.split('\n')
+    return messages
+      .map(s => JSON.parse(s))
+      .filter(msg => msg.reason != null && msg.reason == 'benchmark-complete')
+      .map(msg => new BenchmarkComplete(msg))
   } catch (e) {
     core.error(`Exception while parsing JSON results: ${e}`)
     throw e
   }
-}
-
-/**
- * Converts two BenchmarkResults (base + delta) into a list of BenchmarkComparisons
- * by pairing off the tests with matching names
- * @param baseResults Results from the base branch
- * @param deltaResults Results from the test (PR) branch
- * @returns A tuple with three elements:
- *  - [0]: A list of BenchmarkResults
- *  - [1]: A list of test names that were in base, but not the PR
- *  - [2]: A list of test names that were in the PR, but not in base
- */
-function processResults(
-  baseResults: BenchmarkResult[],
-  deltaResults: BenchmarkResult[]
-): [BenchmarkComparison[], Set<string>, Set<string>] {
-  let allTestNames = new Set<string>()
-  let baseDict = new Map<string, BenchmarkResult>()
-  let deltaDict = new Map<string, BenchmarkResult>()
-  baseResults.forEach(x => {
-    baseDict.set(x.name, x)
-    allTestNames.add(x.name)
-  })
-  deltaResults.forEach(x => {
-    deltaDict.set(x.name, x)
-    allTestNames.add(x.name)
-  })
-
-  let compareResults = new Array<BenchmarkComparison>()
-  let inBaseOnly = new Set<string>()
-  let inDeltaOnly = new Set<string>()
-
-  for (let name of allTestNames) {
-    let baseRes = baseDict.get(name)
-    let deltaRes = deltaDict.get(name)
-    if (baseRes != null && deltaRes != null) {
-      compareResults.push(new BenchmarkComparison(baseRes, deltaRes))
-    } else if (baseRes == null) {
-      inDeltaOnly.add(name)
-    } else if (deltaRes == null) {
-      inBaseOnly.add(name)
-    } else {
-      core.error('Unreachable executed in processResults')
-    }
-  }
-  return [compareResults, inBaseOnly, inDeltaOnly]
 }
 
 /**
@@ -361,12 +240,14 @@ function processResults(
  * @param branchName The name of the base branch
  * @returns A string with the first two rows of markdown
  */
-function genMarkdownHeader(order: ReportFields[], branchName: string): string {
+function genMarkdownHeader(order: ReportFields[]): string {
   let outMap = new Map([
-    [ReportFields.baseRes, branchName],
-    [ReportFields.deltaRes, 'PR'],
-    [ReportFields.name, 'Test Name'],
-    [ReportFields.pctDiff, `% of ${branchName}`]
+    [ReportFields.BaseTime, 'Base'],
+    [ReportFields.PRTime, 'PR'],
+    [ReportFields.TestName, 'Test Name'],
+    [ReportFields.PctDiff, `% Change`],
+    [ReportFields.PctDiff_LB, `% Change (Lower)`],
+    [ReportFields.PctDiff_UB, `% Change (Upper)`]
   ])
   // Add initial header row
   let output = '|'
@@ -390,52 +271,34 @@ function genMarkdownHeader(order: ReportFields[], branchName: string): string {
  * @param args Arguments provided to the overall GH Action
  * @returns A string containing the markdown contents of comparison.
  */
-export async function runComparison(args: ActionArguments): Promise<[BenchmarkComparison[], string]> {
-  let result1 = await execCapture('critcmp', ['--export', 'base'], args.workDir)
-  let result2 = await execCapture(
-    'critcmp',
-    ['--export', 'changes'],
-    args.workDir
-  )
+export async function genBenchmarkResultTable(
+  jsonOutput: string
+): Promise<string> {
 
-  const baseResults = resultsFromJSONString(result1.stdOut)
-  const changeResults = resultsFromJSONString(result2.stdOut)
-
-  let results = processResults(baseResults, changeResults)
+  let results = resultsFromJSONString(jsonOutput)
 
   let order = [
-    ReportFields.name,
-    ReportFields.deltaRes,
-    ReportFields.baseRes,
-    ReportFields.pctDiff
+    ReportFields.TestName,
+    ReportFields.BaseTime,
+    ReportFields.PRTime,
+    ReportFields.PctDiff,
+    ReportFields.PctDiff_LB,
+    ReportFields.PctDiff_UB
   ]
 
   // Build up the table by querying each BenchmarkResult and asking it to generate
   // its own Markdown row.
-  let table = genMarkdownHeader(order, args.branchName)
+  let table = genMarkdownHeader(order)
   let insignificant = new Array<String>()
-  for (let res of results[0]) {
-    if (res.isSignificant) {
-      table += res.generateMarkdownTableRow(order, true)
+  for (let res of results) {
+    if (res.isSignificant() || res.isNew()) {
+      table += res.generateMarkdownRow(order)
       table += '\n'
     } else {
-      insignificant.push(res.name)
+      insignificant.push(res.id)
     }
   }
   let insignificantStr = insignificant.join(', ')
-
-  /* There can be benchmarks that are not in both sets (e.g. benchmarks added
-    or removed in the PR). We can't report differences for them, but we should
-    note that the benchmark set has changed.   */
-  let otherResults = ''
-  if (results[1].size > 0) {
-    otherResults += `\n Tests only on ${args.branchName}: `
-    otherResults += Array.from(results[1]).join(', ')
-  }
-  if (results[2].size > 0) {
-    otherResults += `\n Tests only on PR: `
-    otherResults += Array.from(results[2]).join(', ')
-  }
 
   // Build the final post string.
   const context = github.context
@@ -449,8 +312,7 @@ ${table}
 
 Tests with no significant difference: ${insignificantStr}
 
-${otherResults}
 </details>
 `
-  return [results[0], mdTable]
+  return mdTable
 }
