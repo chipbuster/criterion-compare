@@ -179,7 +179,7 @@ class BenchmarkComplete {
     if (this.change != null) {
       let pChange = this.change.mean.estimate
       let bTime = undoPctChange(pChange, parseFloat(newTimeDisplay))
-      baseTime = bTime.toString() + ' ' + newTimeDisplayUnit
+      baseTime = bTime.toFixed(2) + ' ' + newTimeDisplayUnit
       pctChange = pChange.toFixed(2) + '%'
     } else {
       pctChange = 'null'
@@ -190,11 +190,11 @@ class BenchmarkComplete {
     // Figure out bounds on %change
     let pctLB: string, pctUB: string
     if (pctChange === 'null') {
-      pctLB = this.change?.mean.lower_bound.toFixed(2) + '%'
-      pctUB = this.change?.mean.upper_bound.toFixed(2) + '%'
-    } else {
       pctLB = 'null'
       pctUB = 'null'
+    } else {
+      pctLB = this.change?.mean.lower_bound.toFixed(2) + '%'
+      pctUB = this.change?.mean.upper_bound.toFixed(2) + '%'
     }
 
     let outMap = new Map([
