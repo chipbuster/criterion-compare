@@ -233,9 +233,12 @@ function resultsFromJSONString(s: string): Array<BenchmarkComplete> {
         continue
       }
       out.push(new BenchmarkComplete(json))
-    } catch (e) {
+    } catch (e: any) {
       core.error(`Exception while parsing JSON results: ${e}`)
       core.debug(`Input string was ${msg}`)
+      if ('stack' in e) {
+        core.debug(`Stack trace: ${e.stack}`)
+      }
       throw e
     }
   }
