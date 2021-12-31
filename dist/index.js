@@ -378,6 +378,7 @@ class MeasurementStats {
  */
 class BenchmarkChanges {
     constructor(body) {
+        core.debug(`Attempting to construct changes from ${body}`);
         this.mean = new MeasurementStats(body.mean);
         this.median = new MeasurementStats(body.median);
         this.change = body.change;
